@@ -5,7 +5,7 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
-# 核心修复：在顶层增加权限声明，确保所有 Job 都能获取 Token
+# 核心安全配置：允许 OIDC 令牌写入，实现与 Azure 的无密码连接
 permissions:
   id-token: write
   contents: read
@@ -14,34 +14,44 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 增加：设置 Docker Buildx，这是现代容器构建的基础
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3  # 更新到 v3 以解决 Node.js 警告
+        uses: docker/login-action@v3  # 升级到 v3 以支持 Node.js 24
         with:
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+          # 变量名已根据你的 GitHub Secrets 截图对齐
+          username: ${{ secrets.DOCKER_REGISTRY_SERVER_USERNAME }}
+          password: ${{ secrets.DOCKER_REGISTRY_SERVER_PASSWORD }}
 
       - name: Build and push container image
-        uses: docker/build-push-action@v5  # 更新到 v5
+        uses: docker/build-push-action@v6  # 升级到 v6 解决权限范围与 Node 兼容性问题
         with:
           context: .
           push: true
-          tags: index.docker.io/${{ secrets.REGISTRY_USERNAME }}/rag-pdf-chatbot:latest
+          # 显式使用你的仓库路径 biaou/rag-pdf-chatbot
+          tags: |
+            index.docker.io/${{ secrets.DOCKER_REGISTRY_SERVER_USERNAME }}/rag-pdf-chatbot:latest
+            index.docker.io/${{ secrets.DOCKER_REGISTRY_SERVER_USERNAME }}/rag-pdf-chatbot:${{ github.sha }}
 
   deploy:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Login to Azure
-        uses: azure/login@v2
+      - name: Login to Azure via OIDC
+        uses: azure/login@v2 # 支持 OIDC 无密码认证
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3  # 更新到 v3
+        uses: azure/webapps-deploy@v3 # 部署到指定的 Azure Web App 实例
         with:
-          app-name: 'A3'
-          images: 'index.docker.io/${{ secrets.REGISTRY_USERNAME }}/rag-pdf-chatbot:latest'
+          app-name: 'A3' # 必须与你 Azure 上的名称一致
+          # 确保部署的镜像与 build 阶段推送的标签完全匹配
+          images: 'index.docker.io/${{ secrets.DOCKER_REGISTRY_SERVER_USERNAME }}/rag-pdf-chatbot:latest'
