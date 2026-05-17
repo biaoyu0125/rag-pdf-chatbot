@@ -27,7 +27,7 @@ jobs:
 
       - name: Create clean deployment package
         run: |
-          zip -r release.zip app.py requirements.txt README.md
+          zip -r release.zip app.py requirements.txt README.md startup.sh
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
